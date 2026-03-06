@@ -9,9 +9,10 @@
     <meta name="theme-color" content="#1e40af">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="إجازاتي">
     
     <!-- Manifest Link (Data URI) -->
-    <link rel="manifest" href='data:application/manifest+json,{"name":"متابع الإجازات الذكي","short_name":"إجازاتي","start_url":".","display":"standalone","background_color":"#ffffff","theme_color":"#1e40af","icons":[{"src":"https://cdn-icons-png.flaticon.com/512/2664/2664627.png","sizes":"512x512","type":"image/png"}]}'>
+    <link rel="manifest" href='data:application/manifest+json,{"name":"متابع الإجازات الذكي","short_name":"إجازاتي","description":"نظام ذكي لحساب أرصدة الإجازات السنوية","start_url":"/","display":"standalone","background_color":"#ffffff","theme_color":"#1e40af","icons":[{"src":"https://cdn-icons-png.flaticon.com/512/2664/2664627.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}]}'>
 
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@400;600;700&display=swap" rel="stylesheet">
@@ -28,6 +29,15 @@
         input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1); }
         .highlight-row { background-color: #eff6ff; }
         ::-webkit-scrollbar { width: 0px; background: transparent; }
+        
+        /* Animation for install hint */
+        @keyframes slideUp {
+            from { transform: translateY(100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .install-hint {
+            animation: slideUp 0.5s ease-out;
+        }
     </style>
 </head>
 <body class="safe-area-inset-top">
@@ -36,7 +46,8 @@
     <div class="bg-blue-800 text-white p-6 pb-12 rounded-b-[40px] shadow-lg">
         <div class="flex justify-between items-center mb-4">
             <h1 class="text-xl font-bold" id="displayAppName">متابع الإجازات الذكي</h1>
-            <button id="installBtn" class="hidden bg-white/20 text-xs px-3 py-1 rounded-full border border-white/30 text-white">تثبيت التطبيق</button>
+            <!-- Automated Install Button -->
+            <button id="installBtn" class="hidden bg-white/20 text-xs px-3 py-1 rounded-full border border-white/30 text-white animate-pulse">تثبيت التطبيق</button>
         </div>
         
         <div class="text-center mt-2">
@@ -109,6 +120,17 @@
             <p class="text-[10px] text-yellow-800 leading-relaxed">
                 💡 <b>قواعد الحساب:</b> 8 ساعات يومياً. الرصيد المرحّل يُستخدم أولاً ويسقط بنهاية السنة. لا يتم احتساب رصيد الشهر الجاري إلا بعد انتهائه.
             </p>
+        </div>
+
+        <!-- Manual Install Hint (Hidden by default) -->
+        <div id="manualInstallHint" class="hidden p-4 bg-blue-50 rounded-2xl border border-blue-100 install-hint">
+            <div class="flex items-start gap-3">
+                <span class="text-xl">📲</span>
+                <div>
+                    <p class="text-[11px] font-bold text-blue-900 mb-1">لتثبيت التطبيق يدوياً:</p>
+                    <p class="text-[10px] text-blue-800">اضغط على نقاط المتصفح (⋮) ثم اختر "إضافة إلى الشاشة الرئيسية".</p>
+                </div>
+            </div>
         </div>
 
     </div>
@@ -208,9 +230,12 @@
         // --- PWA Installation Logic ---
         let deferredPrompt;
         window.addEventListener('beforeinstallprompt', (e) => {
+            console.log('beforeinstallprompt fired');
             e.preventDefault();
             deferredPrompt = e;
             document.getElementById('installBtn').classList.remove('hidden');
+            // Hide manual hint if automatic button is available
+            document.getElementById('manualInstallHint').classList.add('hidden');
         });
 
         document.getElementById('installBtn').addEventListener('click', async () => {
@@ -223,19 +248,34 @@
         });
 
         // --- Improved Service Worker Registration ---
-        // Added try-catch and protocol check to handle sandbox environments
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 try {
-                    // Note: GitHub Pages supports PWA, but blob URLs might be blocked in previews
-                    const swCode = `self.addEventListener('fetch', function(event) { });`;
+                    // This registration is essential for the browser to consider the app a PWA
+                    const swCode = `
+                        self.addEventListener('install', (e) => self.skipWaiting());
+                        self.addEventListener('activate', (e) => self.clients.claim());
+                        self.addEventListener('fetch', (e) => {
+                            // Minimal fetch handler required for PWA criteria
+                            e.respondWith(fetch(e.request).catch(() => {}));
+                        });
+                    `;
                     const blob = new Blob([swCode], { type: 'text/javascript' });
                     const url = URL.createObjectURL(blob);
                     
                     navigator.serviceWorker.register(url)
-                        .catch(err => console.warn('Service Worker registration skipped (expected in preview):', err.message));
+                        .then(() => {
+                            console.log('SW Registered');
+                            // If button doesn't show after 5s, show manual hint
+                            setTimeout(() => {
+                                if (document.getElementById('installBtn').classList.contains('hidden')) {
+                                    document.getElementById('manualInstallHint').classList.remove('hidden');
+                                }
+                            }, 5000);
+                        })
+                        .catch(err => console.warn('SW registration skipped:', err.message));
                 } catch (e) {
-                    console.warn('Service Worker initialization failed:', e.message);
+                    console.warn('SW initialization failed:', e.message);
                 }
             });
         }
